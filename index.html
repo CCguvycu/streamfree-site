@@ -555,6 +555,9 @@ function openItem(m){
   if(m.id&&m.id.startsWith('mal:')) PS.type='series';
 
   PS.src = bestSrcIdx();
+  _triedSrcs.clear();
+  // Pre-skip anime-native sources for non-anime content
+  if(!m.malId) SOURCES.forEach((s,i)=>{ if(s.anime) _triedSrcs.add(i); });
 
   document.getElementById('player-title').textContent=PS.title;
   document.getElementById('player-overlay').classList.add('open');
@@ -584,14 +587,14 @@ function buildSrcBar(){
   const isAnime=!!PS.malId;
   const bar=document.getElementById('src-bar');
   bar.innerHTML=SOURCES.map((s,i)=>{
-    // For anime content, show anime sources prominently
-    const label = isAnime&&s.anime ? `★ ${s.n}` : s.n;
+    const label = s.n;
     return `<button class="src-btn${i===PS.src?' active':''}" onclick="setSrc(${i},this)">${esc(label)}</button>`;
   }).join('');
 }
 
 function setSrc(i,btn){
   PS.src=i;
+  _triedSrcs.clear();
   document.querySelectorAll('.src-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   stopAuto();
@@ -617,7 +620,7 @@ function buildEpBar(){
     <button class="ep-nav" onclick="PS.ep++;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();loadFrame();">Next ▶</button>`;
 }
 
-let _autoT=null,_autoI=null;
+let _autoT=null,_autoI=null,_triedSrcs=new Set();
 
 function getSrcUrl(src){
   try{
@@ -629,7 +632,6 @@ function getSrcUrl(src){
 
 function loadFrame(){
   stopAuto();
-  // Pick best starting source for content type
   if(PS.src===0&&PS.malId){
     const ai=SOURCES.findIndex(s=>s.anime);
     if(ai>=0) PS.src=ai;
@@ -637,20 +639,46 @@ function loadFrame(){
   buildSrcBar();
   const src=SOURCES[PS.src];
   const url=getSrcUrl(src);
-  if(!url){ skipSrc(); return; }
+  if(!url){ _triedSrcs.add(PS.src); skipSrc(); return; }
+  _triedSrcs.add(PS.src);
   PS._currentUrl=url;
 
   const fr=document.getElementById('player-frame');
   const loader=document.getElementById('player-loader');
+  const total=SOURCES.length-[...SOURCES.entries()].filter(([i,s])=>s.anime&&!PS.malId).length;
   loader.classList.remove('hidden');
-  document.getElementById('loader-msg').textContent=`Loading…`;
+  document.getElementById('loader-msg').textContent=`Source ${_triedSrcs.size}/${total} — loading…`;
   fr.src='about:blank';
-  setTimeout(()=>{
-    fr.src=url;
-    // Hide loader after 5s regardless
-    _autoT=setTimeout(()=>loader.classList.add('hidden'),5000);
-  },150);
+
+  fr.onload=()=>{
+    if(fr.src&&fr.src!=='about:blank'){
+      _autoT=setTimeout(()=>loader.classList.add('hidden'),600);
+    }
+  };
+
+  setTimeout(()=>{ fr.src=url; _startAutoCountdown(); },150);
 }
+
+function _startAutoCountdown(){
+  const WAIT=18;
+  let s=WAIT;
+  const bar=document.getElementById('auto-bar');
+  const total=SOURCES.length-SOURCES.filter(x=>x.anime&&!PS.malId).length;
+  bar.style.display='flex';
+  document.getElementById('auto-msg').innerHTML=
+    `Source ${_triedSrcs.size}/${total} — switching in <b id="auto-secs">${s}</b>s`;
+  _autoI=setInterval(()=>{
+    s--;
+    const el=document.getElementById('auto-secs');
+    if(el)el.textContent=s;
+    if(s<=0){ clearInterval(_autoI); skipSrc(); }
+  },1000);
+}
+
+// Cancel auto-advance when user interacts with the player area
+document.getElementById('player-overlay').addEventListener('mousemove',()=>{
+  if(_autoI){ clearInterval(_autoI); _autoI=null; document.getElementById('auto-bar').style.display='none'; }
+},{ passive:true });
 
 function openInTab(){if(PS._currentUrl)window.open(PS._currentUrl,'_blank');}
 function toggleFullscreen(){
@@ -659,17 +687,15 @@ function toggleFullscreen(){
   else document.exitFullscreen();
 }
 
-let _autoStart=-1;
 function skipSrc(){
-  _autoStart=-1;
-  clearTimeout(_autoT);
-  clearInterval(_autoI);
-  const n=(PS.src+1)%SOURCES.length;
-  PS.src=n;
-  loadFrame();
+  stopAuto();
+  for(let off=1;off<SOURCES.length;off++){
+    const next=(PS.src+off)%SOURCES.length;
+    if(!_triedSrcs.has(next)){PS.src=next;loadFrame();return;}
+  }
+  showAllFailed();
 }
 function stopAuto(){
-  _autoStart=-1;
   clearTimeout(_autoT);
   clearInterval(_autoI);
   document.getElementById('auto-bar').style.display='none';
