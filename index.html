@@ -230,6 +230,7 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
     <div id="player-title" style="flex:1">—</div>
     <span id="vp-quality" style="display:none;background:rgba(0,212,255,.15);border:1px solid var(--accent);
       color:var(--accent);border-radius:5px;padding:3px 8px;font-size:.72rem;font-weight:700"></span>
+    <button class="phbtn" id="btn-next-src" onclick="skipSrc()" style="background:rgba(255,165,0,.15);border-color:rgba(255,165,0,.3);color:#fbbf24">Next Source →</button>
     <button class="phbtn" onclick="openInTab()">⤢ Open</button>
     <button class="phbtn" onclick="toggleFullscreen()">⛶</button>
   </div>
@@ -246,6 +247,11 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
   </div>
   <div id="src-bar"></div>
   <div id="ep-bar" style="display:none"></div>
+  <div id="auto-bar">
+    <span id="auto-msg">⟳ Trying next in <b id="auto-secs">12</b>s</span>
+    <button class="ab-btn" onclick="skipSrc()" style="background:var(--accent);color:#000">Skip</button>
+    <button class="ab-btn" onclick="stopAuto()" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2)">Keep</button>
+  </div>
 </div>
 
 <!-- GAME OVERLAY -->
@@ -259,8 +265,12 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
 </div>
 
 <script>
-/* no embed sources — pure torrent player */
-const SOURCES=[];
+const SOURCES=[
+  {n:'VidSrc',    m:id=>`https://vidsrc.cc/v2/embed/movie/${id}`,                t:(id,s,e)=>`https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`},
+  {n:'AutoEmbed', m:id=>`https://autoembed.co/embed/autoembed/movie/${id}.html`, t:(id,s,e)=>`https://autoembed.co/embed/autoembed/tv/${id}-${s}-${e}.html`},
+  {n:'VidBinge',  m:id=>`https://vidbinge.dev/embed/movie/${id}`,                t:(id,s,e)=>`https://vidbinge.dev/embed/tv/${id}/${s}/${e}`},
+  {n:'VidLink',   m:id=>`https://vidlink.pro/movie/${PS.tmdbId||id}?autoplay=true`, t:(id,s,e)=>`https://vidlink.pro/tv/${PS.tmdbId||id}/${s}/${e}?autoplay=true`},
+];
 
 /* ═══════════════════════════════════════════════════════
    ROW CONFIGS
@@ -526,45 +536,47 @@ function bestSrcIdx(){
   return 0;
 }
 
-async function openItem(m){
-  PS.id    = m.id;
-  PS.title = m.name||m.title||'';
-  PS.type  = (m.type==='series'||MODE==='series'||MODE==='anime') ? 'series' : 'movie';
-  PS.s=1; PS.ep=1;
-  PS.malId  = m.malId||null;
-  PS.tmdbId = m.moviedb_id||null;
-  PS.epCount= m.episodes||0;
-  PS.seasonEpCounts = null;
-  if(m.id&&m.id.startsWith('mal:')) PS.type='series';
+function openItem(m){
+  PS.id=m.id; PS.title=m.name||m.title||'';
+  PS.type=(m.type==='series'||MODE==='series'||MODE==='anime')?'series':'movie';
+  PS.s=1;PS.ep=1;PS.src=0;
+  PS.malId=m.malId||null;PS.tmdbId=m.moviedb_id||null;
+  PS.epCount=m.episodes||0;PS.seasonEpCounts=null;
+  if(m.id&&m.id.startsWith('mal:'))PS.type='series';
+  _triedSrcs.clear();
+  if(!m.malId)SOURCES.forEach((s,i)=>{if(s.anime)_triedSrcs.add(i);});
 
   document.getElementById('player-title').textContent=PS.title;
   document.getElementById('player-overlay').classList.add('open');
   document.body.style.overflow='hidden';
-  buildEpBar();
-  cwAdd(m);
+  buildSrcBar();buildEpBar();cwAdd(m);
 
-  // Background: fetch TMDB ID + episode counts
-  if(PS.id && !PS.id.startsWith('mal:')){
-    const metaType=PS.type==='series'?'series':'movie';
-    fetch(`https://v3-cinemeta.strem.io/meta/${metaType}/${PS.id}.json`)
+  if(PS.id&&!PS.id.startsWith('mal:')){
+    const t=PS.type==='series'?'series':'movie';
+    fetch(`https://v3-cinemeta.strem.io/meta/${t}/${PS.id}.json`)
       .then(r=>r.json()).then(d=>{
-        if(d?.meta?.moviedb_id) PS.tmdbId=String(d.meta.moviedb_id);
-        if(PS.type==='series' && d?.meta?.videos){
+        if(d?.meta?.moviedb_id)PS.tmdbId=String(d.meta.moviedb_id);
+        if(PS.type==='series'&&d?.meta?.videos){
           const sc={};
-          d.meta.videos.forEach(v=>{ if(v.season&&v.episode) sc[v.season]=Math.max(sc[v.season]||0,v.episode); });
+          d.meta.videos.forEach(v=>{if(v.season&&v.episode)sc[v.season]=Math.max(sc[v.season]||0,v.episode);});
           PS.seasonEpCounts=sc;
-          if(sc[PS.s]&&sc[PS.s]!==PS.epCount){ PS.epCount=sc[PS.s]; buildEpBar(); }
+          if(sc[PS.s]&&sc[PS.s]!==PS.epCount){PS.epCount=sc[PS.s];buildEpBar();}
         }
       }).catch(()=>{});
   }
 
-  _autoStream();
+  loadFrame();
 }
 
 function closePlayer(){
   document.getElementById('player-overlay').classList.remove('open');
+  document.getElementById('player-frame').src='about:blank';
+  const vid=document.getElementById('vp-video');
+  vid.pause();vid.src='';vid.style.display='none';
+  if(_vtClient){_vtClient.destroy();_vtClient=null;}
+  clearInterval(_vtProgI);
   document.body.style.overflow='';
-  _clearPlayer();
+  stopAuto();
 }
 
 function buildSrcBar(){
@@ -597,15 +609,15 @@ function buildEpBar(){
     <span style="font-size:.78rem;color:var(--muted)">S</span>
     <select onchange="PS.s=+this.value;PS.ep=1;
       if(PS.seasonEpCounts&&PS.seasonEpCounts[PS.s])PS.epCount=PS.seasonEpCounts[PS.s];
-      buildEpBar();_autoStream()">
+      buildEpBar();loadFrame()">
       ${Array.from({length:maxS},(_,i)=>`<option value="${i+1}"${PS.s===i+1?' selected':''}>S${i+1}</option>`).join('')}
     </select>
     <span style="font-size:.78rem;color:var(--muted)">E</span>
-    <select id="ep-sel" onchange="PS.ep=+this.value;cwUpdateEp();_autoStream()">
+    <select id="ep-sel" onchange="PS.ep=+this.value;cwUpdateEp();loadFrame()">
       ${Array.from({length:maxEp},(_,i)=>`<option value="${i+1}"${PS.ep===i+1?' selected':''}>E${i+1}</option>`).join('')}
     </select>
-    <button class="ep-nav" onclick="if(PS.ep>1){PS.ep--;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();_autoStream();}">◀ Prev</button>
-    <button class="ep-nav" onclick="PS.ep++;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();_autoStream();">Next ▶</button>`;
+    <button class="ep-nav" onclick="if(PS.ep>1){PS.ep--;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();loadFrame();}">◀ Prev</button>
+    <button class="ep-nav" onclick="PS.ep++;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();loadFrame();">Next ▶</button>`;
 }
 
 let _autoT=null,_autoI=null,_triedSrcs=new Set(),_frameLoadStart=0;
@@ -638,7 +650,7 @@ function loadFrame(){
   document.getElementById('loader-msg').textContent=`Source ${_triedSrcs.size}/${total} — loading…`;
   fr.src='about:blank';
 
-  _showEmbedFrame();
+  fr.style.display='block';
 
   fr.onload=()=>{
     if(fr.src&&fr.src!=='about:blank'){
