@@ -536,7 +536,7 @@ function bestSrcIdx(){
   return 0;
 }
 
-function openItem(m){
+async function openItem(m){
   PS.id=m.id; PS.title=m.name||m.title||'';
   PS.type=(m.type==='series'||MODE==='series'||MODE==='anime')?'series':'movie';
   PS.s=1;PS.ep=1;PS.src=0;
@@ -544,12 +544,43 @@ function openItem(m){
   PS.epCount=m.episodes||0;PS.seasonEpCounts=null;
   if(m.id&&m.id.startsWith('mal:'))PS.type='series';
   _triedSrcs.clear();
-  if(!m.malId)SOURCES.forEach((s,i)=>{if(s.anime)_triedSrcs.add(i);});
 
   document.getElementById('player-title').textContent=PS.title;
   document.getElementById('player-overlay').classList.add('open');
   document.body.style.overflow='hidden';
-  buildSrcBar();buildEpBar();cwAdd(m);
+  buildEpBar();cwAdd(m);
+
+  // Anime: resolve IMDB ID so embed sources work
+  if(m.malId){
+    const loader=document.getElementById('player-loader');
+    loader.classList.remove('hidden');
+    document.getElementById('loader-msg').textContent='Finding streams…';
+    const ck='aex:'+m.malId; let imdbId=cGet(ck);
+    if(!imdbId){
+      try{
+        const ac=new AbortController();
+        setTimeout(()=>ac.abort(),3500);
+        const d=await fetch(`https://api.jikan.moe/v4/anime/${m.malId}/external`,{signal:ac.signal}).then(r=>r.json());
+        const lnk=(d.data||[]).find(x=>x.url?.includes('imdb.com'));
+        if(lnk){const mt=lnk.url.match(/tt\d+/);if(mt){imdbId=mt[0];cSet(ck,imdbId);}}
+      }catch{}
+    }
+    if(imdbId){ PS.id=imdbId; }
+    else {
+      // No IMDB — send to Torrent tab
+      loader.classList.add('hidden');
+      document.getElementById('player-overlay').classList.remove('open');
+      document.body.style.overflow='';
+      setMode('torrent',document.querySelectorAll('.tab')[10]);
+      setTimeout(()=>{
+        const q=document.getElementById('torrent-q');
+        if(q){q.value=PS.title;onTorrentSearch(PS.title);}
+      },100);
+      return;
+    }
+  }
+
+  buildSrcBar();
 
   if(PS.id&&!PS.id.startsWith('mal:')){
     const t=PS.type==='series'?'series':'movie';
