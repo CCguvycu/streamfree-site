@@ -1308,50 +1308,51 @@ function _fallbackToEmbed(){
   loadFrame();
 }
 
-// Auto-resolve: try torrent, fall back to embed
+// Auto-resolve: apibay for movies/TV, AnimeTosho for anime
 async function _autoStream(){
   const loader=document.getElementById('player-loader');
   loader.classList.remove('hidden');
   document.getElementById('loader-msg').textContent='Finding best stream…';
 
   try{
-    // MOVIES — YTS by IMDB ID
+    // MOVIES — apibay by IMDB ID (cat=0 searches all, IMDB ID is unique)
     if(PS.type!=='series'&&PS.id?.startsWith('tt')){
-      const movie=await Promise.race([
-        ytsByImdb(PS.id),
-        new Promise((_,r)=>setTimeout(()=>r(null),3000))
+      const results=await Promise.race([
+        apibaySearch(PS.id,0),
+        new Promise(r=>setTimeout(()=>r([]),3000))
       ]);
-      if(movie?.torrents?.length){
-        const best=movie.torrents.find(t=>t.quality==='1080p')||
-                    movie.torrents.find(t=>t.quality==='720p')||
-                    movie.torrents[0];
-        _buildQualityBar(movie.torrents,movie.title_long);
-        await startTorrentStream(hashToMagnet(best.hash,movie.title_long),best.quality);
+      const seeded=results.filter(t=>+t.seeders>0);
+      if(seeded.length){
+        // Group best torrent per quality
+        const byQ={};
+        seeded.forEach(t=>{const q=_qualFromName(t.name);if(!byQ[q]||+t.seeders>+byQ[q].seeders)byQ[q]=t;});
+        const best=byQ['1080p']||byQ['4K']||byQ['720p']||seeded[0];
+        _buildApibayQualBar(byQ,best);
+        await startTorrentStream(hashToMagnet(best.info_hash,best.name),_qualFromName(best.name));
         return;
       }
     }
 
-    // TV — EZTV, match S##E##
+    // TV — apibay by title + S##E##
     if(PS.type==='series'&&PS.id?.startsWith('tt')){
-      const eps=await Promise.race([
-        eztvByImdb(PS.id),
+      const s=String(PS.s).padStart(2,'0'),e=String(PS.ep).padStart(2,'0');
+      const results=await Promise.race([
+        apibaySearch(`${PS.title} S${s}E${e}`,205),
         new Promise(r=>setTimeout(()=>r([]),3000))
       ]);
-      const s=String(PS.s).padStart(2,'0'),e=String(PS.ep).padStart(2,'0');
-      const re=new RegExp(`S0*${PS.s}E0*${PS.ep}|${s}x${e}`,'i');
-      const matches=eps.filter(ep=>ep.magnet_url&&re.test(ep.title||ep.filename||''));
-      if(matches.length){
-        const best=matches.find(ep=>/1080/i.test(ep.title||ep.filename||''))||matches[0];
-        await startTorrentStream(best.magnet_url,'');
+      const seeded=results.filter(t=>+t.seeders>0);
+      if(seeded.length){
+        const best=seeded.find(t=>/1080p/i.test(t.name))||seeded[0];
+        await startTorrentStream(hashToMagnet(best.info_hash,best.name),_qualFromName(best.name));
         return;
       }
     }
 
     // ANIME — AnimeTosho by title + episode
     if(PS.malId){
-      const q=`${PS.title} ${PS.ep<10?'0'+PS.ep:PS.ep}`;
+      const ep=String(PS.ep).padStart(2,'0');
       const items=await Promise.race([
-        toshoSearch(q),
+        toshoSearch(`${PS.title} ${ep}`),
         new Promise(r=>setTimeout(()=>r([]),3000))
       ]);
       if(items.length){
@@ -1386,16 +1387,18 @@ function _showNotFound(){
     </div>`;
 }
 
-function _buildQualityBar(torrents,title){
+function _buildApibayQualBar(byQ,best){
   const bar=document.getElementById('src-bar');
+  const quals=['4K','1080p','720p','SD'].filter(q=>byQ[q]);
   bar.innerHTML='<span style="color:var(--muted);font-size:.72rem;white-space:nowrap">Quality:</span>'+
-    torrents.map(t=>{
-      const i=_tdAdd({magnet:hashToMagnet(t.hash,title),qual:t.quality});
-      return `<button class="src-btn" onclick="startTorrentStream(_TD[${i}].magnet,_TD[${i}].qual);
-        document.querySelectorAll('.src-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${t.quality}</button>`;
+    quals.map(q=>{
+      const t=byQ[q];
+      const i=_tdAdd({magnet:hashToMagnet(t.info_hash,t.name),qual:q});
+      const active=t===best;
+      return `<button class="src-btn${active?' active':''}" title="${esc(t.name)} — ${t.seeders} seeds"
+        onclick="startTorrentStream(_TD[${i}].magnet,_TD[${i}].qual);
+        document.querySelectorAll('.src-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${q}</button>`;
     }).join('');
-  // Highlight the auto-picked quality
-  const active=bar.querySelector('.src-btn');if(active)active.classList.add('active');
 }
 
 function _buildEpisodeTorrentBar(items){
@@ -1414,23 +1417,23 @@ function streamTorrent(magnet,name,qual){
   startTorrentStream(magnet,qual);
 }
 
-/* Torrent APIs */
-async function ytsSearch(q){
-  const k='yts:'+q;const c=cGet(k);if(c)return c;
-  const d=await fetch('https://yts.mx/api/v2/list_movies.json?query_term='+encodeURIComponent(q)+'&limit=12&sort_by=rating').then(r=>r.json());
-  const r=d.data?.movies||[];cSet(k,r);return r;
+/* Torrent APIs — apibay.org (TPB API, works where YTS/EZTV are blocked) */
+async function apibaySearch(q,cat){
+  const k='ab:'+q+':'+cat;const c=cGet(k);if(c)return c;
+  const d=await fetch('https://apibay.org/q.php?q='+encodeURIComponent(q)+'&cat='+(cat||0)).then(r=>r.json());
+  const r=(Array.isArray(d)&&d[0]?.name!=='No results returned.')?d:[];
+  cSet(k,r);return r;
 }
-async function ytsByImdb(id){
-  const k='ytsi:'+id;const c=cGet(k);if(c)return c;
-  const d=await fetch('https://yts.mx/api/v2/movie_details.json?imdb_id='+id).then(r=>r.json());
-  const r=d.data?.movie||null;if(r)cSet(k,r);return r;
+function _qualFromName(n){
+  if(/2160p|4K|UHD/i.test(n))return '4K';
+  if(/1080p/i.test(n))return '1080p';
+  if(/720p/i.test(n))return '720p';
+  return 'SD';
 }
-async function eztvByImdb(id){
-  const n=id.replace('tt','');
-  const k='eztv:'+n;const c=cGet(k);if(c)return c;
-  const d=await fetch('https://eztv.re/api/get-torrents?imdb_id='+n+'&limit=30').then(r=>r.json());
-  const r=d.torrents||[];cSet(k,r);return r;
-}
+// Keep compat aliases used in Torrent tab
+async function ytsSearch(q){ return apibaySearch(q,207); }
+async function ytsByImdb(id){ return apibaySearch(id,0).then(r=>r[0]||null); }
+async function eztvByImdb(id){ return apibaySearch(id.replace('tt','tt'),205); }
 async function toshoSearch(q){
   const k='tosho:'+q;const c=cGet(k);if(c)return c;
   // AnimeTosho returns RSS/XML — parse with DOMParser
@@ -1461,8 +1464,9 @@ async function tryTorrentFallback(){
       if(items.length){_showListPicker(items.map(i=>({label:i.title,magnet:i.magnet_uri,info:(i.total_size/1073741824).toFixed(2)+' GB'})),PS.title);return;}
     }
     if(PS.type==='series'&&PS.id?.startsWith('tt')){
-      const eps=(await eztvByImdb(PS.id)).filter(e=>e.magnet_url);
-      if(eps.length){_showListPicker(eps.map(e=>({label:e.title||e.filename,magnet:e.magnet_url,info:e.size_bytes?Math.round(e.size_bytes/1048576)+' MB':''})),PS.title+' — Episodes');return;}
+      const s=String(PS.s).padStart(2,'0'),e=String(PS.ep).padStart(2,'0');
+      const eps=(await apibaySearch(`${PS.title} S${s}E${e}`,208)).filter(t=>+t.seeders>0);
+      if(eps.length){_showListPicker(eps.map(t=>({label:t.name,magnet:hashToMagnet(t.info_hash,t.name),info:_qualFromName(t.name)+' · '+t.seeders+' seeds'})),PS.title+' — Episodes');return;}
     }
     document.getElementById('loader-msg').innerHTML='<div style="text-align:center">No torrent found for this title.</div>';
   }catch(e){document.getElementById('loader-msg').textContent='Lookup failed: '+e.message;}
@@ -1528,7 +1532,7 @@ function buildTorrent(){
         </div>
       </div>
       <div id="torrent-status" style="color:var(--muted);font-size:.82rem;padding:2px 0 12px">
-        No servers — streams directly P2P. Movies via YTS · Anime via AnimeTosho · TV via EZTV.
+        No servers — streams directly P2P via The Pirate Bay + AnimeTosho.
       </div>
       <div id="torrent-results"></div>
     </div>`;
@@ -1558,31 +1562,30 @@ async function doTorrentSearch(q){
   status.textContent='Searching…';
   try{
     if(_torrentMode==='movie'){
-      const movies=await ytsSearch(q);
-      status.textContent=movies.length?movies.length+' results — click a quality to stream':'No movies found on YTS';
+      const results=await apibaySearch(q,207);
+      const seeded=results.filter(t=>+t.seeders>0);
+      status.textContent=seeded.length?seeded.length+' results via The Pirate Bay':'No movies found';
       res.innerHTML='';
-      if(!movies.length)return;
-      const grid=document.createElement('div');
-      grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px';
-      movies.forEach(m=>{
-        const card=document.createElement('div');
-        card.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden';
-        const quals=m.torrents.map(t=>{
-          const i=_tdAdd({magnet:hashToMagnet(t.hash,m.title_long),name:m.title_long,qual:t.quality});
-          return `<button onclick="streamTorrent(_TD[${i}].magnet,_TD[${i}].name,_TD[${i}].qual)"
-            style="flex:1;background:rgba(0,212,255,.1);border:1px solid var(--accent);color:var(--accent);
-            padding:3px 4px;font-size:.63rem;font-weight:700;border-radius:4px;cursor:pointer">${t.quality}</button>`;
-        }).join('');
-        card.innerHTML=`
-          <img src="${esc(m.medium_cover_image)}" style="width:100%;aspect-ratio:2/3;object-fit:cover;display:block" loading="lazy" onerror="this.style.background='var(--card)'">
-          <div style="padding:6px 5px">
-            <div style="font-size:.71rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px">${esc(m.title)}</div>
-            <div style="font-size:.64rem;color:var(--muted);margin-bottom:5px">${m.year||''} ${m.rating?'⭐'+m.rating:''}</div>
-            <div style="display:flex;gap:3px;flex-wrap:wrap">${quals}</div>
-          </div>`;
-        grid.appendChild(card);
+      if(!seeded.length)return;
+      const list=document.createElement('div');
+      list.style.cssText='display:flex;flex-direction:column;gap:6px';
+      seeded.slice(0,20).forEach(t=>{
+        const q=_qualFromName(t.name);
+        const i=_tdAdd({magnet:hashToMagnet(t.info_hash,t.name),qual:q});
+        const row=document.createElement('div');
+        row.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px';
+        row.innerHTML=`
+          <span style="background:rgba(0,212,255,.15);border:1px solid var(--accent);color:var(--accent);
+            border-radius:5px;padding:2px 7px;font-size:.68rem;font-weight:700;white-space:nowrap">${q}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.name)}</div>
+            <div style="font-size:.67rem;color:var(--muted)">${Math.round(t.size/1073741824*10)/10} GB · 🌱 ${t.seeders} seeds</div>
+          </div>
+          <button onclick="streamTorrent(_TD[${i}].magnet,_TD[${i}].name,_TD[${i}].qual)"
+            style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap">▶ Play</button>`;
+        list.appendChild(row);
       });
-      res.appendChild(grid);
+      res.appendChild(list);
 
     }else if(_torrentMode==='anime'){
       const items=(await toshoSearch(q)).filter(i=>i.magnet_uri);
@@ -1607,29 +1610,28 @@ async function doTorrentSearch(q){
       res.appendChild(list);
 
     }else{
-      // TV — Cinemeta for IMDB ID → EZTV
-      const cdata=await fetch(CM+'/catalog/series/top/search='+encodeURIComponent(q)+'.json').then(r=>r.json());
-      const shows=cdata.metas||[];
-      if(!shows.length){status.textContent='Show not found';res.innerHTML='';return;}
-      const show=shows[0];
-      const eps=(await eztvByImdb(show.id)).filter(e=>e.magnet_url);
-      status.textContent=eps.length?eps.length+' episodes for "'+esc(show.name)+'" via EZTV':'No episodes found';
+      // TV — apibay direct search
+      const results=await apibaySearch(q,208);
+      const seeded=results.filter(t=>+t.seeders>0);
+      status.textContent=seeded.length?seeded.length+' results via The Pirate Bay':'No TV torrents found';
       res.innerHTML='';
-      if(!eps.length)return;
+      if(!seeded.length)return;
       const list=document.createElement('div');
       list.style.cssText='display:flex;flex-direction:column;gap:6px';
-      eps.slice(0,25).forEach(ep=>{
-        const label=ep.title||ep.filename||'Episode';
-        const i=_tdAdd({magnet:ep.magnet_url,name:label,qual:''});
+      seeded.slice(0,25).forEach(t=>{
+        const q=_qualFromName(t.name);
+        const i=_tdAdd({magnet:hashToMagnet(t.info_hash,t.name),qual:q});
         const row=document.createElement('div');
         row.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px';
         row.innerHTML=`
+          <span style="background:rgba(139,92,246,.15);border:1px solid var(--accent2);color:var(--accent2);
+            border-radius:5px;padding:2px 7px;font-size:.68rem;font-weight:700;white-space:nowrap">${q}</span>
           <div style="flex:1;min-width:0">
-            <div style="font-size:.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>
-            <div style="font-size:.67rem;color:var(--muted)">${ep.size_bytes?Math.round(ep.size_bytes/1048576)+' MB':''} ${ep.seeds?'🌱 '+ep.seeds+' seeds':''}</div>
+            <div style="font-size:.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.name)}</div>
+            <div style="font-size:.67rem;color:var(--muted)">${Math.round(t.size/1073741824*10)/10} GB · 🌱 ${t.seeders} seeds</div>
           </div>
           <button onclick="streamTorrent(_TD[${i}].magnet,_TD[${i}].name,_TD[${i}].qual)"
-            style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:.75rem;font-weight:600;cursor:pointer;white-space:nowrap">▶ Stream</button>`;
+            style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap">▶ Play</button>`;
         list.appendChild(row);
       });
       res.appendChild(list);
