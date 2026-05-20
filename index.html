@@ -278,7 +278,6 @@ const SOURCES = [
   { n:'VidLink',     m:id=>`https://vidlink.pro/movie/${PS.tmdbId||id}?autoplay=true`,     t:(id,s,e)=>`https://vidlink.pro/tv/${PS.tmdbId||id}/${s}/${e}?autoplay=true` },
   // ── Anime-native ─────────────────────────────────────────────────────────
   { n:'★HiAnime',   anime:(mid,ep)=>`https://hianime.to/embed/mal/${mid}?ep=${ep}`,       m:id=>`https://hianime.to/embed/${id}`, t:(id,s,e)=>`https://hianime.to/embed/${id}?ep=${e}` },
-  { n:'★AllManga',  anime:(mid,ep)=>`https://allmanga.to/embed/mal/${mid}/${ep}`,          m:id=>`https://allmanga.to/embed/${id}`, t:(id,s,e)=>`https://allmanga.to/embed/${id}/${e}` },
   { n:'★Yugen',     anime:(mid,ep)=>`https://yugen.to/embed/mal/${mid}/${ep}/`,            m:id=>`https://yugen.to/embed/${id}`,   t:(id,s,e)=>`https://yugen.to/embed/${id}?ep=${e}` },
 ];
 
@@ -368,7 +367,7 @@ function jkCard(a){
 /* ═══════════════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════════════ */
-let MODE='movie', PS={id:null,type:'movie',src:0,s:1,ep:1,title:'',malId:null,tmdbId:null,epCount:0};
+let MODE='movie', PS={id:null,type:'movie',src:0,s:1,ep:1,title:'',malId:null,tmdbId:null,epCount:0,seasonEpCounts:null};
 
 /* ═══════════════════════════════════════════════════════
    CACHE
@@ -544,7 +543,7 @@ function bestSrcIdx(){
   return 0;
 }
 
-function openItem(m){
+async function openItem(m){
   PS.id    = m.id;
   PS.title = m.name||m.title||'';
   PS.type  = (m.type==='series'||MODE==='series'||MODE==='anime') ? 'series' : 'movie';
@@ -552,28 +551,69 @@ function openItem(m){
   PS.malId  = m.malId||null;
   PS.tmdbId = m.moviedb_id||null;
   PS.epCount= m.episodes||0;
+  PS.seasonEpCounts = null;
   if(m.id&&m.id.startsWith('mal:')) PS.type='series';
 
-  PS.src = bestSrcIdx();
   _triedSrcs.clear();
-  // Pre-skip anime-native sources for non-anime content
   if(!m.malId) SOURCES.forEach((s,i)=>{ if(s.anime) _triedSrcs.add(i); });
+  PS.src = bestSrcIdx();
 
   document.getElementById('player-title').textContent=PS.title;
   document.getElementById('player-overlay').classList.add('open');
   document.body.style.overflow='hidden';
-  buildSrcBar();
   buildEpBar();
   cwAdd(m);
-  loadFrame();
 
-  // Fetch metadata in background for TMDB ID (VidLink)
-  if(!PS.tmdbId && m.id && !m.id.startsWith('mal:')){
-    const t=PS.type==='series'?'series':'movie';
-    fetch(`https://v3-cinemeta.strem.io/meta/${t}/${m.id}.json`)
-      .then(r=>r.json()).then(d=>{ if(d?.meta?.moviedb_id) PS.tmdbId=String(d.meta.moviedb_id); })
-      .catch(()=>{});
+  // For anime: resolve IMDB ID from Jikan external links so regular sources work
+  if(m.malId){
+    const loader=document.getElementById('player-loader');
+    loader.classList.remove('hidden');
+    document.getElementById('loader-msg').textContent='Finding streams…';
+    const ck='anime-ext-'+m.malId;
+    let imdbId=cGet(ck);
+    if(!imdbId){
+      try{
+        const ac=new AbortController();
+        const tid=setTimeout(()=>ac.abort(),4000);
+        const d=await fetch(`https://api.jikan.moe/v4/anime/${m.malId}/external`,{signal:ac.signal}).then(r=>r.json());
+        clearTimeout(tid);
+        const lnk=(d.data||[]).find(x=>x.url&&x.url.includes('imdb.com'));
+        if(lnk){const mt=lnk.url.match(/tt\d+/);if(mt){imdbId=mt[0];cSet(ck,imdbId);}}
+      }catch{}
+    }
+    if(imdbId){
+      // Has IMDB — use all regular sources, skip anime-native
+      PS.id=imdbId;
+      _triedSrcs.clear();
+      SOURCES.forEach((s,i)=>{ if(s.anime) _triedSrcs.add(i); });
+      PS.src=0;
+    } else {
+      // No IMDB — only use anime-native sources
+      _triedSrcs.clear();
+      SOURCES.forEach((s,i)=>{ if(!s.anime) _triedSrcs.add(i); });
+      const ai=SOURCES.findIndex(s=>s.anime);
+      PS.src=ai>=0?ai:0;
+    }
   }
+
+  buildSrcBar();
+
+  // Background: fetch TMDB ID for VidLink + episode counts for TV
+  if(PS.id && !PS.id.startsWith('mal:')){
+    const metaType=PS.type==='series'?'series':'movie';
+    fetch(`https://v3-cinemeta.strem.io/meta/${metaType}/${PS.id}.json`)
+      .then(r=>r.json()).then(d=>{
+        if(d?.meta?.moviedb_id) PS.tmdbId=String(d.meta.moviedb_id);
+        if(PS.type==='series' && d?.meta?.videos){
+          const sc={};
+          d.meta.videos.forEach(v=>{ if(v.season&&v.episode) sc[v.season]=Math.max(sc[v.season]||0,v.episode); });
+          PS.seasonEpCounts=sc;
+          if(sc[PS.s]&&sc[PS.s]!==PS.epCount){ PS.epCount=sc[PS.s]; buildEpBar(); }
+        }
+      }).catch(()=>{});
+  }
+
+  loadFrame();
 }
 
 function closePlayer(){
@@ -605,11 +645,15 @@ function buildEpBar(){
   const bar=document.getElementById('ep-bar');
   if(PS.type!=='series'){ bar.style.display='none'; return; }
   bar.style.display='flex';
-  const maxEp = Math.max(PS.epCount||0, 100);
-  const maxS  = 20;
+  const epForSeason=PS.seasonEpCounts?.[PS.s]||PS.epCount||0;
+  const maxEp=Math.max(epForSeason,1);
+  const seasons=PS.seasonEpCounts?Object.keys(PS.seasonEpCounts).map(Number):null;
+  const maxS=seasons?Math.max(...seasons,PS.s):20;
   bar.innerHTML=`
     <span style="font-size:.78rem;color:var(--muted)">S</span>
-    <select onchange="PS.s=+this.value;PS.ep=1;buildEpBar();loadFrame()">
+    <select onchange="PS.s=+this.value;PS.ep=1;
+      if(PS.seasonEpCounts&&PS.seasonEpCounts[PS.s])PS.epCount=PS.seasonEpCounts[PS.s];
+      buildEpBar();loadFrame()">
       ${Array.from({length:maxS},(_,i)=>`<option value="${i+1}"${PS.s===i+1?' selected':''}>S${i+1}</option>`).join('')}
     </select>
     <span style="font-size:.78rem;color:var(--muted)">E</span>
