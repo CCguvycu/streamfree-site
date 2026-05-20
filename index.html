@@ -569,7 +569,7 @@ function openItem(m){
   buildSrcBar();
   buildEpBar();
   cwAdd(m);
-  findAndPlay(); // auto-detects first working source
+  loadFrame();
 
   // Fetch metadata in background for TMDB ID (VidLink)
   if(!PS.tmdbId && m.id && !m.id.startsWith('mal:')){
@@ -624,89 +624,39 @@ function buildEpBar(){
     <button class="ep-nav" onclick="PS.ep++;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();loadFrame();">Next ▶</button>`;
 }
 
-let _autoT=null,_autoI=null,_finding=false;
+let _autoT=null,_autoI=null;
 
-// Silently test sources and pick the first live one
-async function findAndPlay(){
-  if(_finding) return;
-  _finding=true;
-  const loader=document.getElementById('player-loader');
-  const msg=document.getElementById('loader-msg');
-  loader.classList.remove('hidden');
-
-  const isAnime=!!PS.malId;
-  // Build ordered list — anime sources first for anime content
-  const order=SOURCES.map((_,i)=>i).sort((a,b)=>{
-    const as=SOURCES[a].anime, bs=SOURCES[b].anime;
-    if(isAnime){ if(as&&!bs)return -1; if(!as&&bs)return 1; }
-    return a-b;
-  });
-
-  for(let attempt=0; attempt<order.length; attempt++){
-    const i=order[attempt];
-    const src=SOURCES[i];
-    msg.textContent=`Trying source ${attempt+1} of ${order.length}…`;
-    let url;
-    try{
-      if(src.anime&&isAnime) url=src.anime(PS.malId,PS.ep);
-      else if(PS.type==='series') url=src.t(PS.id,PS.s,PS.ep);
-      else url=src.m(PS.id);
-    }catch{ continue; }
-
-    // Test if source server is reachable (no-cors = opaque response = server is up)
-    try{
-      await fetch(url,{mode:'no-cors',signal:AbortSignal.timeout(3000)});
-      // Server responded — use this source
-      PS.src=i; PS._currentUrl=url;
-      buildSrcBar();
-      _finding=false;
-      _playUrl(url);
-      return;
-    }catch{ continue; }
-  }
-
-  // All failed — just try first source anyway
-  _finding=false;
-  PS.src=order[0];
-  buildSrcBar();
-  let url;
-  const s=SOURCES[PS.src];
+function getSrcUrl(src){
   try{
-    if(s.anime&&isAnime) url=s.anime(PS.malId,PS.ep);
-    else if(PS.type==='series') url=s.t(PS.id,PS.s,PS.ep);
-    else url=s.m(PS.id);
-  }catch{}
-  PS._currentUrl=url;
-  _playUrl(url);
-}
-
-function _playUrl(url){
-  const loader=document.getElementById('player-loader');
-  document.getElementById('loader-msg').textContent='Playing…';
-  const fr=document.getElementById('player-frame');
-  fr.src='about:blank';
-  setTimeout(()=>{
-    fr.src=url;
-    setTimeout(()=>loader.classList.add('hidden'),4000);
-  },100);
+    if(src.anime&&PS.malId)     return src.anime(PS.malId,PS.ep);
+    if(PS.type==='series')      return src.t(PS.id,PS.s,PS.ep);
+    return src.m(PS.id);
+  }catch{ return null; }
 }
 
 function loadFrame(){
   stopAuto();
-  // If called directly (e.g. changing episode/source), skip auto-find
-  const loader=document.getElementById('player-loader');
-  const msg=document.getElementById('loader-msg');
-  loader.classList.remove('hidden');
+  // Pick best starting source for content type
+  if(PS.src===0&&PS.malId){
+    const ai=SOURCES.findIndex(s=>s.anime);
+    if(ai>=0) PS.src=ai;
+  }
+  buildSrcBar();
   const src=SOURCES[PS.src];
-  let url;
-  try{
-    if(src.anime&&PS.malId)     url=src.anime(PS.malId,PS.ep);
-    else if(PS.type==='series') url=src.t(PS.id,PS.s,PS.ep);
-    else                        url=src.m(PS.id);
-  }catch{ return; }
+  const url=getSrcUrl(src);
+  if(!url){ skipSrc(); return; }
   PS._currentUrl=url;
-  msg.textContent=`Loading ${src.n}…`;
-  _playUrl(url);
+
+  const fr=document.getElementById('player-frame');
+  const loader=document.getElementById('player-loader');
+  loader.classList.remove('hidden');
+  document.getElementById('loader-msg').textContent=`Loading…`;
+  fr.src='about:blank';
+  setTimeout(()=>{
+    fr.src=url;
+    // Hide loader after 5s regardless
+    _autoT=setTimeout(()=>loader.classList.add('hidden'),5000);
+  },150);
 }
 
 function openInTab(){if(PS._currentUrl)window.open(PS._currentUrl,'_blank');}
@@ -716,23 +666,21 @@ function toggleFullscreen(){
   else document.exitFullscreen();
 }
 
-let _autoStart=-1,_autoI=null;
-function startAuto(){
-  if(_autoStart<0)_autoStart=PS.src;
-  const next=(PS.src+1)%SOURCES.length;
-  if(next===_autoStart){_autoStart=-1;showAllFailed();return;}
-  let secs=8;
-  const bar=document.getElementById('auto-bar');
-  const secsEl=document.getElementById('auto-secs');
-  bar.style.display='flex';
-  secsEl.textContent=secs;
-  _autoI=setInterval(()=>{
-    secs--;secsEl.textContent=secs;
-    if(secs<=0){clearInterval(_autoI);PS.src=next;buildSrcBar();loadFrame();}
-  },1000);
+let _autoStart=-1;
+function skipSrc(){
+  _autoStart=-1;
+  clearTimeout(_autoT);
+  clearInterval(_autoI);
+  const n=(PS.src+1)%SOURCES.length;
+  PS.src=n;
+  loadFrame();
 }
-function skipSrc(){clearInterval(_autoI);const n=(PS.src+1)%SOURCES.length;PS.src=n;buildSrcBar();loadFrame();}
-function stopAuto(){_autoStart=-1;clearTimeout(_autoT);clearInterval(_autoI);document.getElementById('auto-bar').style.display='none';}
+function stopAuto(){
+  _autoStart=-1;
+  clearTimeout(_autoT);
+  clearInterval(_autoI);
+  document.getElementById('auto-bar').style.display='none';
+}
 function showAllFailed(){
   stopAuto();
   document.getElementById('player-loader').classList.remove('hidden');
