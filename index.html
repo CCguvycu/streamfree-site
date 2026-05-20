@@ -264,11 +264,6 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
 ═══════════════════════════════════════════════════════ */
 // Sources ordered by reliability — IMDB ID based unless marked needsTmdb
 const SOURCES = [
-  // ── YouTube (always works) ───────────────────────────────────────────────
-  { n:'▶ YouTube',
-    m:()=>`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(PS.title+' full movie free')}&autoplay=1&rel=0`,
-    t:()=>`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(PS.title+' season '+PS.s+' episode '+PS.ep+' full episode')}&autoplay=1&rel=0`,
-    anime:(mid,ep)=>`https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(PS.title+' episode '+ep+' english')}&autoplay=1&rel=0` },
   // ── Tier 1: Most Reliable ────────────────────────────────────────────────
   { n:'VidSrc.cc',   m:id=>`https://vidsrc.cc/v2/embed/movie/${id}`,                      t:(id,s,e)=>`https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}` },
   { n:'Embed.su',    m:id=>`https://embed.su/embed/movie/${id}`,                           t:(id,s,e)=>`https://embed.su/embed/tv/${id}/${s}/${e}` },
