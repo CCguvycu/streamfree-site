@@ -262,27 +262,27 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
 /* ═══════════════════════════════════════════════════════
    SOURCES — 20 embed providers
 ═══════════════════════════════════════════════════════ */
-// Sources ordered by reliability — IMDB ID based unless marked needsTmdb
+// Sources from FMHY — https://fmhy.net/videopiracyguide
 const SOURCES = [
-  // ── Tier 1: Most Reliable ────────────────────────────────────────────────
+  // ── Embed APIs (IMDB ID) ─────────────────────────────────────────────────
   { n:'VidSrc.cc',   m:id=>`https://vidsrc.cc/v2/embed/movie/${id}`,                      t:(id,s,e)=>`https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}` },
   { n:'Embed.su',    m:id=>`https://embed.su/embed/movie/${id}`,                           t:(id,s,e)=>`https://embed.su/embed/tv/${id}/${s}/${e}` },
   { n:'VidSrc.pro',  m:id=>`https://vidsrc.pro/embed/movie/${id}`,                        t:(id,s,e)=>`https://vidsrc.pro/embed/tv/${id}/${s}/${e}` },
-  { n:'VidFast',     m:id=>`https://vidfast.pro/movie/${id}`,                              t:(id,s,e)=>`https://vidfast.pro/tv/${id}/${s}/${e}` },
   { n:'AutoEmbed',   m:id=>`https://autoembed.co/embed/autoembed/movie/${id}.html`,        t:(id,s,e)=>`https://autoembed.co/embed/autoembed/tv/${id}-${s}-${e}.html` },
-  // ── Tier 2: Good Backup ──────────────────────────────────────────────────
-  { n:'VidSrc.me',   m:id=>`https://vidsrc.me/embed/movie?imdb=${id}&autoplay=true`,      t:(id,s,e)=>`https://vidsrc.me/embed/tv?imdb=${id}&season=${s}&episode=${e}&autoplay=true` },
-  { n:'VidBinge',    m:id=>`https://vidbinge.dev/embed/movie/${id}`,                       t:(id,s,e)=>`https://vidbinge.dev/embed/tv/${id}/${s}/${e}` },
+  { n:'VidFast',     m:id=>`https://vidfast.pro/movie/${id}`,                              t:(id,s,e)=>`https://vidfast.pro/tv/${id}/${s}/${e}` },
+  { n:'VidSrc.me',   m:id=>`https://vidsrc.me/embed/movie?imdb=${id}`,                    t:(id,s,e)=>`https://vidsrc.me/embed/tv?imdb=${id}&season=${s}&episode=${e}` },
   { n:'MoviesAPI',   m:id=>`https://moviesapi.club/movie/${id}`,                           t:(id,s,e)=>`https://moviesapi.club/tv/${id}-${s}-${e}` },
   { n:'2Embed',      m:id=>`https://2embed.cc/embed/${id}`,                                t:(id,s,e)=>`https://2embed.cc/embedtv/${id}&s=${s}&e=${e}` },
-  { n:'SmashyStream',m:id=>`https://embed.smashystream.com/playere.php?imdb=${id}`,        t:(id,s,e)=>`https://embed.smashystream.com/playere.php?imdb=${id}&s=${s}&e=${e}` },
-  // ── Tier 3: TMDB-based ───────────────────────────────────────────────────
+  // ── FMHY Recommended Stream Sites ───────────────────────────────────────
+  { n:'Hexa.su',     m:id=>`https://hexa.su/embed/movie/${id}`,                           t:(id,s,e)=>`https://hexa.su/embed/tv/${id}/${s}/${e}` },
+  { n:'1Embed',      m:id=>`https://1embed.cc/embed/?imdb=${id}`,                          t:(id,s,e)=>`https://1embed.cc/embed/?imdb=${id}&s=${s}&e=${e}` },
+  { n:'Flixer',      m:id=>`https://flixer.su/embed/movie/${id}`,                          t:(id,s,e)=>`https://flixer.su/embed/tv/${id}/${s}/${e}` },
+  { n:'CineBolt',    m:id=>`https://cinebolt.net/embed/movie/${id}`,                       t:(id,s,e)=>`https://cinebolt.net/embed/tv/${id}/${s}/${e}` },
+  { n:'RiveStream',  m:id=>`https://rivestream.app/embed?type=movie&id=${id}`,             t:(id,s,e)=>`https://rivestream.app/embed?type=tv&id=${id}&s=${s}&e=${e}` },
+  // ── TMDB-based ───────────────────────────────────────────────────────────
   { n:'VidLink',     needsTmdb:true,
     m:id=>`https://vidlink.pro/movie/${PS.tmdbId||id}?autoplay=true`,
     t:(id,s,e)=>`https://vidlink.pro/tv/${PS.tmdbId||id}/${s}/${e}?autoplay=true` },
-  { n:'NontonGo',    m:id=>`https://www.nontongo.win/embed/movie/${id}`,                   t:(id,s,e)=>`https://www.nontongo.win/embed/tv/${id}/${s}/${e}` },
-  { n:'MultiEmbed',  m:id=>`https://multiembed.mov/?video_id=${id}&tmdb=0`,                t:(id,s,e)=>`https://multiembed.mov/?video_id=${id}&tmdb=0&s=${s}&e=${e}` },
-  { n:'WarezCDN',    m:id=>`https://embed.warezcdn.net/filme/${id}`,                       t:(id,s,e)=>`https://embed.warezcdn.net/serie/${id}/${s}/${e}` },
   // ── Anime-native (MAL ID) ────────────────────────────────────────────────
   { n:'HiAnime',     anime:(mid,ep)=>`https://hianime.to/embed/mal/${mid}?ep=${ep}`,      m:id=>`https://hianime.to/embed/${id}`, t:(id,s,e)=>`https://hianime.to/embed/${id}?ep=${e}` },
   { n:'AllManga',    anime:(mid,ep)=>`https://allmanga.to/embed/mal/${mid}/${ep}`,         m:id=>`https://allmanga.to/embed/${id}`, t:(id,s,e)=>`https://allmanga.to/embed/${id}/${e}` },
