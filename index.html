@@ -266,10 +266,10 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
 
 <script>
 const SOURCES=[
-  {n:'VidSrc',    m:id=>`https://vidsrc.cc/v2/embed/movie/${id}`,                t:(id,s,e)=>`https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`},
   {n:'AutoEmbed', m:id=>`https://autoembed.co/embed/autoembed/movie/${id}.html`, t:(id,s,e)=>`https://autoembed.co/embed/autoembed/tv/${id}-${s}-${e}.html`},
   {n:'VidBinge',  m:id=>`https://vidbinge.dev/embed/movie/${id}`,                t:(id,s,e)=>`https://vidbinge.dev/embed/tv/${id}/${s}/${e}`},
   {n:'VidLink',   m:id=>`https://vidlink.pro/movie/${PS.tmdbId||id}?autoplay=true`, t:(id,s,e)=>`https://vidlink.pro/tv/${PS.tmdbId||id}/${s}/${e}?autoplay=true`},
+  {n:'VidSrc',    m:id=>`https://vidsrc.cc/v2/embed/movie/${id}`,                t:(id,s,e)=>`https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`},
 ];
 
 /* ═══════════════════════════════════════════════════════
