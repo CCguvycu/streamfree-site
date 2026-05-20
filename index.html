@@ -1436,14 +1436,16 @@ async function ytsByImdb(id){ return apibaySearch(id,0).then(r=>r[0]||null); }
 async function eztvByImdb(id){ return apibaySearch(id.replace('tt','tt'),205); }
 async function toshoSearch(q){
   const k='tosho:'+q;const c=cGet(k);if(c)return c;
-  // AnimeTosho returns RSS/XML — parse with DOMParser
   const txt=await fetch('https://feed.animetosho.org/rss2?q='+encodeURIComponent(q)+'&limit=20').then(r=>r.text());
   const doc=new DOMParser().parseFromString(txt,'application/xml');
   const r=[...doc.querySelectorAll('item')].map(item=>{
-    const get=name=>[...item.querySelectorAll('*')].find(el=>el.localName===name)?.textContent||'';
     const title=item.querySelector('title')?.textContent||'';
-    const magnet=get('magnetURI');
-    const size=+get('contentLength')||0;
+    // Magnet is inside <description> CDATA as href="magnet:..."
+    const desc=item.querySelector('description')?.textContent||'';
+    const m=desc.match(/href="(magnet:[^"]+)"/);
+    const magnet=m?m[1].replace(/&amp;/g,'&'):'';
+    const enc=item.querySelector('enclosure');
+    const size=+(enc?.getAttribute('length')||0);
     return {title,magnet_uri:magnet,total_size:size};
   }).filter(i=>i.magnet_uri);
   cSet(k,r);return r;
