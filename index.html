@@ -1348,16 +1348,18 @@ async function _autoStream(){
       }
     }
 
-    // ANIME — AnimeTosho by title + episode
+    // ANIME — apibay by title + episode number
     if(PS.malId){
       const ep=String(PS.ep).padStart(2,'0');
-      const items=await Promise.race([
-        toshoSearch(`${PS.title} ${ep}`),
+      const results=await Promise.race([
+        apibaySearch(`${PS.title} ${ep}`,0),
         new Promise(r=>setTimeout(()=>r([]),3000))
       ]);
-      if(items.length){
-        await startTorrentStream(items[0].magnet_uri,'');
-        _buildEpisodeTorrentBar(items);
+      const seeded=results.filter(t=>+t.seeders>0);
+      if(seeded.length){
+        const best=seeded.find(t=>/1080p/i.test(t.name))||seeded[0];
+        await startTorrentStream(hashToMagnet(best.info_hash,best.name),_qualFromName(best.name));
+        _buildApibayEpBar(seeded,best);
         return;
       }
     }
@@ -1401,14 +1403,16 @@ function _buildApibayQualBar(byQ,best){
     }).join('');
 }
 
-function _buildEpisodeTorrentBar(items){
+function _buildApibayEpBar(results,best){
   const bar=document.getElementById('src-bar');
-  bar.innerHTML='<span style="color:var(--muted);font-size:.72rem;white-space:nowrap">Result:</span>'+
-    items.slice(0,6).map((it,idx)=>{
-      const i=_tdAdd({magnet:it.magnet_uri,qual:''});
-      return `<button class="src-btn${idx===0?' active':''}" onclick="startTorrentStream(_TD[${i}].magnet,'');
-        document.querySelectorAll('.src-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')"
-        title="${esc(it.title)}">#${idx+1}</button>`;
+  bar.innerHTML='<span style="color:var(--muted);font-size:.72rem;white-space:nowrap">Version:</span>'+
+    results.slice(0,6).map((t,idx)=>{
+      const i=_tdAdd({magnet:hashToMagnet(t.info_hash,t.name),qual:_qualFromName(t.name)});
+      const active=t===best;
+      return `<button class="src-btn${active?' active':''}" title="${esc(t.name)}"
+        onclick="startTorrentStream(_TD[${i}].magnet,_TD[${i}].qual);
+        document.querySelectorAll('.src-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+        ${_qualFromName(t.name)} #${idx+1}</button>`;
     }).join('');
 }
 
@@ -1462,8 +1466,9 @@ async function tryTorrentFallback(){
       if(m?.torrents?.length){_showYTSPicker(m);return;}
     }
     if(PS.malId||MODE==='anime'){
-      const items=(await toshoSearch(PS.title)).filter(i=>i.magnet_uri);
-      if(items.length){_showListPicker(items.map(i=>({label:i.title,magnet:i.magnet_uri,info:(i.total_size/1073741824).toFixed(2)+' GB'})),PS.title);return;}
+      const ep=String(PS.ep).padStart(2,'0');
+      const items=(await apibaySearch(`${PS.title} ${ep}`,0)).filter(t=>+t.seeders>0);
+      if(items.length){_showListPicker(items.map(t=>({label:t.name,magnet:hashToMagnet(t.info_hash,t.name),info:_qualFromName(t.name)+' · '+t.seeders+' seeds'})),PS.title);return;}
     }
     if(PS.type==='series'&&PS.id?.startsWith('tt')){
       const s=String(PS.s).padStart(2,'0'),e=String(PS.ep).padStart(2,'0');
@@ -1590,23 +1595,27 @@ async function doTorrentSearch(q){
       res.appendChild(list);
 
     }else if(_torrentMode==='anime'){
-      const items=(await toshoSearch(q)).filter(i=>i.magnet_uri);
-      status.textContent=items.length?items.length+' results via AnimeTosho':'No anime found';
+      const results=await apibaySearch(q,0);
+      const seeded=results.filter(t=>+t.seeders>0);
+      status.textContent=seeded.length?seeded.length+' results via The Pirate Bay':'No anime found';
       res.innerHTML='';
-      if(!items.length)return;
+      if(!seeded.length)return;
       const list=document.createElement('div');
       list.style.cssText='display:flex;flex-direction:column;gap:6px';
-      items.slice(0,20).forEach(it=>{
-        const i=_tdAdd({magnet:it.magnet_uri,name:it.title,qual:''});
+      seeded.slice(0,20).forEach(t=>{
+        const ql=_qualFromName(t.name);
+        const i=_tdAdd({magnet:hashToMagnet(t.info_hash,t.name),qual:ql});
         const row=document.createElement('div');
         row.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px';
         row.innerHTML=`
+          <span style="background:rgba(139,92,246,.15);border:1px solid var(--accent2);color:var(--accent2);
+            border-radius:5px;padding:2px 7px;font-size:.68rem;font-weight:700;white-space:nowrap">${ql}</span>
           <div style="flex:1;min-width:0">
-            <div style="font-size:.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.title)}</div>
-            <div style="font-size:.67rem;color:var(--muted)">${it.total_size?(it.total_size/1073741824).toFixed(2)+' GB':''}</div>
+            <div style="font-size:.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.name)}</div>
+            <div style="font-size:.67rem;color:var(--muted)">${Math.round(t.size/1073741824*10)/10} GB · 🌱 ${t.seeders} seeds</div>
           </div>
           <button onclick="streamTorrent(_TD[${i}].magnet,_TD[${i}].name,_TD[${i}].qual)"
-            style="background:var(--accent2);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:.75rem;font-weight:600;cursor:pointer;white-space:nowrap">▶ Stream</button>`;
+            style="background:var(--accent2);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap">▶ Play</button>`;
         list.appendChild(row);
       });
       res.appendChild(list);
