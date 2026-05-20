@@ -239,7 +239,6 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
     </div>
     <iframe id="player-frame" allowfullscreen referrerpolicy="no-referrer"
       allow="fullscreen *; autoplay *; encrypted-media *; picture-in-picture *; web-share *; clipboard-write *"></iframe>
-    <video id="torrent-player" controls style="display:none;flex:1;width:100%;background:#000;min-height:0"></video>
   </div>
   <div id="src-bar"></div>
   <div id="ep-bar" style="display:none"></div>
@@ -622,12 +621,7 @@ async function openItem(m){
 
 function closePlayer(){
   document.getElementById('player-overlay').classList.remove('open');
-  const fr=document.getElementById('player-frame');
-  fr.src='about:blank'; fr.style.display='';
-  const vid=document.getElementById('torrent-player');
-  vid.pause(); vid.src=''; vid.style.display='none';
-  if(_wtClient){_wtClient.destroy();_wtClient=null;}
-  clearInterval(_wtProgI);
+  document.getElementById('player-frame').src='about:blank';
   document.body.style.overflow='';
   stopAuto();
 }
@@ -1278,7 +1272,7 @@ window.openItem=function(m){
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 /* ═══════════════════════════════════════════════════════
-   WEBTORRENT — P2P streaming
+   TORRENT — open magnet in system client (qBittorrent etc.)
 ═══════════════════════════════════════════════════════ */
 const TRTK='&tr='+[
   'udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce',
@@ -1293,75 +1287,12 @@ function hashToMagnet(hash,name){
   return 'magnet:?xt=urn:btih:'+hash+'&dn='+encodeURIComponent(name)+TRTK;
 }
 
-var _TD=[];      // torrent data store (var = accessible from inline onclick)
-var _wtClient=null, _wtProgI=null;
-
+var _TD=[];
 function _tdAdd(o){_TD.push(o);return _TD.length-1;}
 
-async function _loadWT(){
-  if(window.WebTorrent)return;
-  await new Promise((res,rej)=>{
-    const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/webtorrent@2.1.34/webtorrent.min.js';
-    s.onload=res;s.onerror=rej;
-    document.head.appendChild(s);
-  });
-}
-
-async function streamTorrent(magnet,name,qual){
-  if(_wtClient){_wtClient.destroy();_wtClient=null;}
-  clearInterval(_wtProgI);
-
-  document.getElementById('player-title').textContent=name+(qual?' ['+qual+']':'');
-  document.getElementById('player-overlay').classList.add('open');
-  document.body.style.overflow='hidden';
-  document.getElementById('src-bar').innerHTML=
-    '<span style="color:var(--muted);font-size:.75rem;padding:0 6px">🧲 P2P torrent stream — no embed servers</span>';
-  document.getElementById('ep-bar').style.display='none';
-  stopAuto();
-
-  const fr=document.getElementById('player-frame');
-  fr.style.display='none'; fr.src='about:blank';
-  const vid=document.getElementById('torrent-player');
-  vid.style.cssText='display:block;flex:1;width:100%;background:#000;min-height:0';
-
-  const loader=document.getElementById('player-loader');
-  loader.classList.remove('hidden');
-  document.getElementById('loader-msg').textContent='Loading WebTorrent…';
-
-  try{ await _loadWT(); }
-  catch{ document.getElementById('loader-msg').textContent='Failed to load WebTorrent.js'; return; }
-
-  document.getElementById('loader-msg').textContent='Connecting to peers…';
-  _wtClient=new WebTorrent();
-
-  _wtClient.add(magnet,torrent=>{
-    const file=torrent.files
-      .filter(f=>/\.(mp4|mkv|avi|mov|webm)$/i.test(f.name))
-      .sort((a,b)=>b.length-a.length)[0];
-    if(!file){ document.getElementById('loader-msg').textContent='No video file found in torrent.'; return; }
-
-    file.renderTo(vid,err=>{
-      if(err){
-        document.getElementById('loader-msg').innerHTML=
-          'Codec unsupported (try a different result).<br><small style="color:var(--muted)">H.265/HEVC does not play in browser</small>';
-        return;
-      }
-      loader.classList.add('hidden');
-    });
-
-    _wtProgI=setInterval(()=>{
-      if(!_wtClient||torrent.done){clearInterval(_wtProgI);return;}
-      const el=document.getElementById('loader-msg');
-      if(el)el.textContent=(torrent.progress*100).toFixed(1)+'% — '+
-        (torrent.downloadSpeed/1048576).toFixed(2)+' MB/s — '+torrent.numPeers+' peers';
-    },1500);
-  });
-
-  _wtClient.on('error',err=>{
-    const el=document.getElementById('loader-msg');
-    if(el)el.textContent='Torrent error: '+err.message;
-  });
+function streamTorrent(magnet,name,qual){
+  const a=document.createElement('a');
+  a.href=magnet; a.click();
 }
 
 /* Torrent APIs */
@@ -1429,7 +1360,8 @@ function _showYTSPicker(m){
   }).join('');
   document.getElementById('loader-msg').innerHTML=`
     <div style="text-align:center;padding:10px">
-      <div style="font-weight:700;margin-bottom:14px">🧲 ${esc(m.title_long)}</div>
+      <div style="font-weight:700;margin-bottom:6px">🧲 ${esc(m.title_long)}</div>
+      <div style="color:var(--muted);font-size:.75rem;margin-bottom:14px">Opens in qBittorrent / uTorrent</div>
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">${opts}</div>
     </div>`;
 }
@@ -1446,7 +1378,8 @@ function _showListPicker(items,title){
   }).join('');
   document.getElementById('loader-msg').innerHTML=`
     <div style="text-align:center;padding:10px">
-      <div style="font-weight:700;margin-bottom:10px">🧲 ${esc(title)}</div>
+      <div style="font-weight:700;margin-bottom:4px">🧲 ${esc(title)}</div>
+      <div style="color:var(--muted);font-size:.75rem;margin-bottom:10px">Opens in qBittorrent / uTorrent</div>
       <div style="display:flex;flex-direction:column;gap:5px;align-items:center">${opts}</div>
     </div>`;
 }
