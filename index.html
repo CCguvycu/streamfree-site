@@ -230,7 +230,6 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
     <div id="player-title" style="flex:1">—</div>
     <span id="vp-quality" style="display:none;background:rgba(0,212,255,.15);border:1px solid var(--accent);
       color:var(--accent);border-radius:5px;padding:3px 8px;font-size:.72rem;font-weight:700"></span>
-    <button class="phbtn" id="btn-next-src" onclick="skipSrc()" style="background:rgba(255,165,0,.15);border-color:rgba(255,165,0,.3);color:#fbbf24">Next Source →</button>
     <button class="phbtn" onclick="openInTab()">⤢ Open</button>
     <button class="phbtn" onclick="toggleFullscreen()">⛶</button>
   </div>
@@ -247,11 +246,6 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
   </div>
   <div id="src-bar"></div>
   <div id="ep-bar" style="display:none"></div>
-  <div id="auto-bar">
-    <span id="auto-msg">⟳ Source slow — trying next in <b id="auto-secs">15</b>s</span>
-    <button class="ab-btn" onclick="skipSrc()" style="background:var(--accent);color:#000">Skip</button>
-    <button class="ab-btn" onclick="stopAuto()" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2)">Keep</button>
-  </div>
 </div>
 
 <!-- GAME OVERLAY -->
@@ -265,27 +259,8 @@ nav{position:sticky;top:0;z-index:100;height:var(--nav);background:rgba(13,13,26
 </div>
 
 <script>
-/* ═══════════════════════════════════════════════════════
-   SOURCES — 20 embed providers
-═══════════════════════════════════════════════════════ */
-// Live-tested sources — verified working as of today
-const SOURCES = [
-  { n:'VidSrc',      m:id=>`https://vidsrc.cc/v2/embed/movie/${id}`,                      t:(id,s,e)=>`https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}` },
-  { n:'AutoEmbed',   m:id=>`https://autoembed.co/embed/autoembed/movie/${id}.html`,        t:(id,s,e)=>`https://autoembed.co/embed/autoembed/tv/${id}-${s}-${e}.html` },
-  { n:'VidFast',     m:id=>`https://vidfast.pro/movie/${id}`,                              t:(id,s,e)=>`https://vidfast.pro/tv/${id}/${s}/${e}` },
-  { n:'VidSrc.me',   m:id=>`https://vidsrc.me/embed/movie?imdb=${id}`,                    t:(id,s,e)=>`https://vidsrc.me/embed/tv?imdb=${id}&season=${s}&episode=${e}` },
-  { n:'VidBinge',    m:id=>`https://vidbinge.dev/embed/movie/${id}`,                       t:(id,s,e)=>`https://vidbinge.dev/embed/tv/${id}/${s}/${e}` },
-  { n:'Hexa',        m:id=>`https://hexa.su/embed/movie/${id}`,                            t:(id,s,e)=>`https://hexa.su/embed/tv/${id}/${s}/${e}` },
-  { n:'Flixer',      m:id=>`https://flixer.su/embed/movie/${id}`,                          t:(id,s,e)=>`https://flixer.su/embed/tv/${id}/${s}/${e}` },
-  { n:'CineBolt',    m:id=>`https://cinebolt.net/embed/movie/${id}`,                       t:(id,s,e)=>`https://cinebolt.net/embed/tv/${id}/${s}/${e}` },
-  { n:'2Embed',      m:id=>`https://2embed.cc/embed/${id}`,                                t:(id,s,e)=>`https://2embed.cc/embedtv/${id}&s=${s}&e=${e}` },
-  { n:'Smashy',      m:id=>`https://embed.smashystream.com/playere.php?imdb=${id}`,        t:(id,s,e)=>`https://embed.smashystream.com/playere.php?imdb=${id}&s=${s}&e=${e}` },
-  { n:'MultiEmbed',  m:id=>`https://multiembed.mov/?video_id=${id}&tmdb=0`,                t:(id,s,e)=>`https://multiembed.mov/?video_id=${id}&tmdb=0&s=${s}&e=${e}` },
-  { n:'VidLink',     m:id=>`https://vidlink.pro/movie/${PS.tmdbId||id}?autoplay=true`,     t:(id,s,e)=>`https://vidlink.pro/tv/${PS.tmdbId||id}/${s}/${e}?autoplay=true` },
-  // ── Anime-native ─────────────────────────────────────────────────────────
-  { n:'★HiAnime',   anime:(mid,ep)=>`https://hianime.to/embed/mal/${mid}?ep=${ep}`,       m:id=>`https://hianime.to/embed/${id}`, t:(id,s,e)=>`https://hianime.to/embed/${id}?ep=${e}` },
-  { n:'★Yugen',     anime:(mid,ep)=>`https://yugen.to/embed/mal/${mid}/${ep}/`,            m:id=>`https://yugen.to/embed/${id}`,   t:(id,s,e)=>`https://yugen.to/embed/${id}?ep=${e}` },
-];
+/* no embed sources — pure torrent player */
+const SOURCES=[];
 
 /* ═══════════════════════════════════════════════════════
    ROW CONFIGS
@@ -1315,7 +1290,6 @@ function _clearPlayer(){
   vid.pause();vid.src='';vid.style.display='none';
   fr.src='about:blank';fr.style.display='none';
   document.getElementById('vp-quality').style.display='none';
-  document.getElementById('btn-next-src').style.display='none';
   if(_vtClient){_vtClient.destroy();_vtClient=null;}
   clearInterval(_vtProgI);
   stopAuto();
@@ -1426,8 +1400,28 @@ async function _autoStream(){
     }
   }catch{}
 
-  // Nothing found — use embed sources
-  _fallbackToEmbed();
+  // No torrent found
+  _showNotFound();
+}
+
+function _showNotFound(){
+  const loader=document.getElementById('player-loader');
+  loader.classList.remove('hidden');
+  document.getElementById('player-frame').style.display='none';
+  document.getElementById('vp-video').style.display='none';
+  document.getElementById('loader-msg').innerHTML=`
+    <div style="text-align:center;padding:20px">
+      <div style="font-size:2rem;margin-bottom:10px">🧲</div>
+      <div style="font-weight:700;margin-bottom:6px">No torrent found</div>
+      <div style="color:var(--muted);font-size:.82rem;margin-bottom:16px">Try searching manually in the Torrent tab</div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button onclick="closePlayer();setMode('torrent',document.querySelector('.tab:nth-child(11)'));
+          document.getElementById('torrent-q').value='${esc(PS.title)}';onTorrentSearch('${esc(PS.title)}')"
+          style="background:var(--accent2);color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:.82rem;font-weight:700;cursor:pointer">
+          🔍 Search "${esc(PS.title)}"
+        </button>
+      </div>
+    </div>`;
 }
 
 function _buildQualityBar(torrents,title){
