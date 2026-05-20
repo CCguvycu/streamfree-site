@@ -569,7 +569,7 @@ function openItem(m){
   buildSrcBar();
   buildEpBar();
   cwAdd(m);
-  loadFrame();
+  findAndPlay(); // auto-detects first working source
 
   // Fetch metadata in background for TMDB ID (VidLink)
   if(!PS.tmdbId && m.id && !m.id.startsWith('mal:')){
@@ -624,29 +624,89 @@ function buildEpBar(){
     <button class="ep-nav" onclick="PS.ep++;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();loadFrame();">Next ▶</button>`;
 }
 
-let _autoT=null,_autoI=null;
-function loadFrame(){
-  stopAuto();
+let _autoT=null,_autoI=null,_finding=false;
+
+// Silently test sources and pick the first live one
+async function findAndPlay(){
+  if(_finding) return;
+  _finding=true;
   const loader=document.getElementById('player-loader');
   const msg=document.getElementById('loader-msg');
   loader.classList.remove('hidden');
-  msg.textContent=`Loading ${SOURCES[PS.src].n}…`;
 
+  const isAnime=!!PS.malId;
+  // Build ordered list — anime sources first for anime content
+  const order=SOURCES.map((_,i)=>i).sort((a,b)=>{
+    const as=SOURCES[a].anime, bs=SOURCES[b].anime;
+    if(isAnime){ if(as&&!bs)return -1; if(!as&&bs)return 1; }
+    return a-b;
+  });
+
+  for(let attempt=0; attempt<order.length; attempt++){
+    const i=order[attempt];
+    const src=SOURCES[i];
+    msg.textContent=`Trying source ${attempt+1} of ${order.length}…`;
+    let url;
+    try{
+      if(src.anime&&isAnime) url=src.anime(PS.malId,PS.ep);
+      else if(PS.type==='series') url=src.t(PS.id,PS.s,PS.ep);
+      else url=src.m(PS.id);
+    }catch{ continue; }
+
+    // Test if source server is reachable (no-cors = opaque response = server is up)
+    try{
+      await fetch(url,{mode:'no-cors',signal:AbortSignal.timeout(3000)});
+      // Server responded — use this source
+      PS.src=i; PS._currentUrl=url;
+      buildSrcBar();
+      _finding=false;
+      _playUrl(url);
+      return;
+    }catch{ continue; }
+  }
+
+  // All failed — just try first source anyway
+  _finding=false;
+  PS.src=order[0];
+  buildSrcBar();
+  let url;
+  const s=SOURCES[PS.src];
+  try{
+    if(s.anime&&isAnime) url=s.anime(PS.malId,PS.ep);
+    else if(PS.type==='series') url=s.t(PS.id,PS.s,PS.ep);
+    else url=s.m(PS.id);
+  }catch{}
+  PS._currentUrl=url;
+  _playUrl(url);
+}
+
+function _playUrl(url){
+  const loader=document.getElementById('player-loader');
+  document.getElementById('loader-msg').textContent='Playing…';
+  const fr=document.getElementById('player-frame');
+  fr.src='about:blank';
+  setTimeout(()=>{
+    fr.src=url;
+    setTimeout(()=>loader.classList.add('hidden'),4000);
+  },100);
+}
+
+function loadFrame(){
+  stopAuto();
+  // If called directly (e.g. changing episode/source), skip auto-find
+  const loader=document.getElementById('player-loader');
+  const msg=document.getElementById('loader-msg');
+  loader.classList.remove('hidden');
   const src=SOURCES[PS.src];
   let url;
   try{
-    if(src.anime&&PS.malId)      url=src.anime(PS.malId, PS.ep);
-    else if(PS.type==='series')  url=src.t(PS.id, PS.s, PS.ep);
-    else                         url=src.m(PS.id);
-  }catch(e){ skipSrc(); return; }
-
+    if(src.anime&&PS.malId)     url=src.anime(PS.malId,PS.ep);
+    else if(PS.type==='series') url=src.t(PS.id,PS.s,PS.ep);
+    else                        url=src.m(PS.id);
+  }catch{ return; }
   PS._currentUrl=url;
-  const fr=document.getElementById('player-frame');
-  fr.src='about:blank';
-  setTimeout(()=>{ fr.src=url; },100);
-
-  // Hide loader after 4s — embeds rarely fire onload
-  _autoT=setTimeout(()=>loader.classList.add('hidden'), 4000);
+  msg.textContent=`Loading ${src.n}…`;
+  _playUrl(url);
 }
 
 function openInTab(){if(PS._currentUrl)window.open(PS._currentUrl,'_blank');}
