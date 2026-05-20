@@ -1218,6 +1218,53 @@ window.openItem=function(m){
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 /* ═══════════════════════════════════════════════════════
+   HASH DB — instant play, no API lookup needed
+═══════════════════════════════════════════════════════ */
+const HASH_DB={
+  'tt1375666':{h:'224BF45881252643DFC2E71ABC7B2660A21C68C4',q:'1080p',n:'Inception (2010)'},
+  'tt0816692':{h:'9BB5A1B259C6A945EAF71CE162926514712296C7',q:'1080p',n:'Interstellar (2014)'},
+  'tt0468569':{h:'A54926C2E07B0E5F0243954330B599B31C804F0B',q:'1080p',n:'The Dark Knight (2008)'},
+  'tt1345836':{h:'75EBCA77F3DB04E381F7D5E1B85A03D427F6650F',q:'1080p',n:'The Dark Knight Rises (2012)'},
+  'tt0137523':{h:'A086CE4AFABBD8AB949662E30134A49E22D1F0C7',q:'1080p',n:'Fight Club (1999)'},
+  'tt0133093':{h:'D7A46713EAEE18C746B3254B7D1492A50FD9D6CE',q:'1080p',n:'The Matrix (1999)'},
+  'tt0111161':{h:'E0D00667650ABA9EE05AACBBBD8B55EA8A51F534',q:'1080p',n:'The Shawshank Redemption (1994)'},
+  'tt0068646':{h:'5E915039C619366E490D08DB3FFED21F3A3AE84A',q:'1080p',n:'The Godfather (1972)'},
+  'tt0071562':{h:'FF36E5ABFB670FA137CC86CEE5B3C9D3CB316985',q:'1080p',n:'The Godfather Part II (1974)'},
+  'tt0110912':{h:'3F8F219568B8B229581DDDD7BC5A5E889E906A9B',q:'1080p',n:'Pulp Fiction (1994)'},
+  'tt0109830':{h:'FEE625A78CB2057CE7845AA66E95F60D43EA8AB0',q:'1080p',n:'Forrest Gump (1994)'},
+  'tt0172495':{h:'C8D9282C6CE0C540A7E4DC466878C56A843719AC',q:'1080p',n:'Gladiator (2000)'},
+  'tt0120338':{h:'DAD2E3AAABD54FF0A63E7B6C786C5532F0D5BD18',q:'1080p',n:'Titanic (1997)'},
+  'tt0499549':{h:'BE9217363A065D03222D3B2E54599D9817CF90E9',q:'1080p',n:'Avatar (2009)'},
+  'tt0114369':{h:'5C41A2636A6CFDC4A63B989E668F09A52DA0BF36',q:'1080p',n:'Se7en (1995)'},
+  'tt1853728':{h:'5A33FE6305951A420CA30A6A5FF2E48C6FB4C7F1',q:'1080p',n:'Django Unchained (2012)'},
+  'tt0993846':{h:'4B642D022980E5EBAA7CF4B6E1CC93769921CB42',q:'1080p',n:'The Wolf of Wall Street (2013)'},
+  'tt1517268':{h:'74F550AA9BD7C1D86AAE170E33A9D05EFC70EAAA',q:'1080p',n:'Barbie (2023)'},
+  'tt1745960':{h:'F3DCDC3A1FC67BB14634074D8659A06AC5FBD131',q:'1080p',n:'Top Gun: Maverick (2022)'},
+  'tt0167260':{h:'AD73D5576DC4ECFEEA4353D4503F9B3F93DFA740',q:'1080p',n:'The Lord of the Rings: The Return of the King (2003)'},
+  'tt0167261':{h:'EBDA5B39978F58B50B2666A808A11C971A9CF080',q:'1080p',n:'The Lord of the Rings: The Two Towers (2002)'},
+  'tt0120737':{h:'94240B8E89974035555008274223F5A1C7F35FE9',q:'1080p',n:'The Lord of the Rings: The Fellowship of the Ring (2001)'},
+  'tt0245429':{h:'90FE0936423399552C4BCA6FAB0E911DE4DAE611',q:'1080p',n:'Spirited Away (2001)'},
+  'tt0361748':{h:'762BFFE86D7F74E36793B7AC15E1F80031D85520',q:'1080p',n:'Inglourious Basterds (2009)'},
+  'tt1454468':{h:'95731CE3C5EA065766F6EB92C9A426A58ADA56FE',q:'1080p',n:'Gravity (2013)'},
+  'tt0241527':{h:'B47882A62EEDEC7767AA86B7A866F1DD846C5357',q:'1080p',n:'Harry Potter and the Sorcerer\'s Stone (2001)'},
+  'tt1201607':{h:'17AD3432E84E1E98A4D0F4ECD3596420091E5454',q:'1080p',n:'Harry Potter and the Deathly Hallows Part 2 (2011)'},
+  'tt0266543':{h:'4AAF45E554FD279272DA5E34B8FC85A0D97B9792',q:'1080p',n:'Finding Nemo (2003)'},
+  'tt0435761':{h:'63EF65AC303B350E5C5C230C03066DCCB3A45E64',q:'1080p',n:'Toy Story 3 (2010)'},
+  'tt0114709':{h:'AEE2BCB4DA9A5650941C64B127F491683C273D86',q:'1080p',n:'Toy Story (1995)'},
+  'tt2380307':{h:'6BC91FB5E02AD991E180B92F3382CDD1D252247E',q:'1080p',n:'Coco (2017)'},
+  'tt0102926':{h:'B6EC2A4507B13ADE6BC4A1FAC5B39CA25888B326',q:'1080p',n:'The Silence of the Lambs (1991)'},
+  'tt2294629':{h:'5E44917CAD4ED9C3F6710B59DDC939970FF74ACD',q:'1080p',n:'Frozen (2013)'},
+  'tt0317248':{h:'93936A441908D50DCE630431B46E9680A068A89E',q:'1080p',n:'City of God (2002)'},
+  'tt4154796':{h:'223F7484D326AD8EFD3CF1E548DED524833CB77E',q:'1080p',n:'Avengers: Endgame (2019)'},
+  'tt4154756':{h:'866BDCFA006930A718ADBC21D8CAE1F2C7F9D8B3',q:'1080p',n:'Avengers: Infinity War (2018)'},
+  'tt7286456':{h:'2B415A885A3E2210A6EF1D6C57EBA325F20D8BC6',q:'1080p',n:'Joker (2019)'},
+  'tt15398776':{h:'491AA0E19CBDB03B100961DB82315C08643A6139',q:'1080p',n:'Oppenheimer (2023)'},
+  'tt1160419':{h:'CB7D15E81B2E8497990C200277058DA2FE26EFEB',q:'1080p',n:'Dune (2021)'},
+  'tt10872600':{h:'56DA9A1557B04D9318AADA13C1F0D647CDA5C5B6',q:'1080p',n:'Spider-Man: No Way Home (2021)'},
+  'tt0076759':{h:'FE1E1069DE410FB44157F02B4F6655DDE99621C6',q:'1080p',n:'Star Wars: A New Hope (1977)'},
+};
+
+/* ═══════════════════════════════════════════════════════
    VIDEO PLAYER — WebTorrent + embed fallback
 ═══════════════════════════════════════════════════════ */
 const TRTK='&tr='+[
@@ -1315,15 +1362,24 @@ async function _autoStream(){
   document.getElementById('loader-msg').textContent='Finding best stream…';
 
   try{
-    // MOVIES — apibay by IMDB ID (cat=0 searches all, IMDB ID is unique)
+    // MOVIES — check hardcoded HASH_DB first (instant, zero API calls)
     if(PS.type!=='series'&&PS.id?.startsWith('tt')){
+      const db=HASH_DB[PS.id];
+      if(db){
+        document.getElementById('loader-msg').textContent='Starting stream…';
+        document.getElementById('src-bar').innerHTML=
+          `<span style="color:var(--muted);font-size:.72rem;white-space:nowrap">Quality:</span>
+           <button class="src-btn active">${db.q}</button>`;
+        await startTorrentStream(hashToMagnet(db.h,db.n),db.q);
+        return;
+      }
+      // Not in DB — fall back to apibay lookup
       const results=await Promise.race([
         apibaySearch(PS.id,0),
         new Promise(r=>setTimeout(()=>r([]),3000))
       ]);
       const seeded=results.filter(t=>+t.seeders>0);
       if(seeded.length){
-        // Group best torrent per quality
         const byQ={};
         seeded.forEach(t=>{const q=_qualFromName(t.name);if(!byQ[q]||+t.seeders>+byQ[q].seeders)byQ[q]=t;});
         const best=byQ['1080p']||byQ['4K']||byQ['720p']||seeded[0];
