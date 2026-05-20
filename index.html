@@ -664,7 +664,7 @@ function buildEpBar(){
     <button class="ep-nav" onclick="PS.ep++;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();loadFrame();">Next ▶</button>`;
 }
 
-let _autoT=null,_autoI=null,_triedSrcs=new Set();
+let _autoT=null,_autoI=null,_triedSrcs=new Set(),_frameLoadStart=0;
 
 function getSrcUrl(src){
   try{
@@ -697,14 +697,16 @@ function loadFrame(){
   fr.onload=()=>{
     if(fr.src&&fr.src!=='about:blank'){
       _autoT=setTimeout(()=>loader.classList.add('hidden'),600);
+      // Fast load (<2s) = error/404 page — speed up auto-skip to 4s
+      if(Date.now()-_frameLoadStart<2000) _speedSkip();
     }
   };
 
-  setTimeout(()=>{ fr.src=url; _startAutoCountdown(); },150);
+  setTimeout(()=>{ _frameLoadStart=Date.now(); fr.src=url; _startAutoCountdown(); },150);
 }
 
 function _startAutoCountdown(){
-  const WAIT=18;
+  const WAIT=12;
   let s=WAIT;
   const bar=document.getElementById('auto-bar');
   const total=SOURCES.length-SOURCES.filter(x=>x.anime&&!PS.malId).length;
@@ -719,10 +721,20 @@ function _startAutoCountdown(){
   },1000);
 }
 
-// Cancel auto-advance when user interacts with the player area
-document.getElementById('player-overlay').addEventListener('mousemove',()=>{
-  if(_autoI){ clearInterval(_autoI); _autoI=null; document.getElementById('auto-bar').style.display='none'; }
-},{ passive:true });
+function _speedSkip(){
+  clearInterval(_autoI);
+  let s=4;
+  const bar=document.getElementById('auto-bar');
+  bar.style.display='flex';
+  document.getElementById('auto-msg').innerHTML=
+    `⚠ Not available — switching in <b id="auto-secs">${s}</b>s`;
+  _autoI=setInterval(()=>{
+    s--;
+    const el=document.getElementById('auto-secs');
+    if(el)el.textContent=s;
+    if(s<=0){ clearInterval(_autoI); skipSrc(); }
+  },1000);
+}
 
 function openInTab(){if(PS._currentUrl)window.open(PS._currentUrl,'_blank');}
 function toggleFullscreen(){
@@ -757,7 +769,7 @@ function showAllFailed(){
           style="background:#ff0000;color:#fff;padding:8px 14px;border-radius:7px;font-weight:700;font-size:.82rem">▶ YouTube</a>
         <a href="https://yts.mx/browse-movies/${encodeURIComponent(PS.title)}" target="_blank"
           style="background:#6db33f;color:#fff;padding:8px 14px;border-radius:7px;font-weight:700;font-size:.82rem">🎬 YTS</a>
-        <button onclick="_autoStart=-1;PS.src=0;buildSrcBar();loadFrame();"
+        <button onclick="_triedSrcs.clear();PS.src=0;buildSrcBar();loadFrame();"
           style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);padding:8px 14px;border-radius:7px;font-size:.82rem;cursor:pointer">🔄 Try Again</button>
       </div>
     </div>`;
