@@ -1383,8 +1383,17 @@ async function eztvByImdb(id){
 }
 async function toshoSearch(q){
   const k='tosho:'+q;const c=cGet(k);if(c)return c;
-  const d=await fetch('https://feed.animetosho.org/api?q='+encodeURIComponent(q)+'&limit=20').then(r=>r.json());
-  const r=Array.isArray(d)?d:[];cSet(k,r);return r;
+  // AnimeTosho returns RSS/XML — parse with DOMParser
+  const txt=await fetch('https://feed.animetosho.org/rss2?q='+encodeURIComponent(q)+'&limit=20').then(r=>r.text());
+  const doc=new DOMParser().parseFromString(txt,'application/xml');
+  const r=[...doc.querySelectorAll('item')].map(item=>{
+    const get=name=>[...item.querySelectorAll('*')].find(el=>el.localName===name)?.textContent||'';
+    const title=item.querySelector('title')?.textContent||'';
+    const magnet=get('magnetURI');
+    const size=+get('contentLength')||0;
+    return {title,magnet_uri:magnet,total_size:size};
+  }).filter(i=>i.magnet_uri);
+  cSet(k,r);return r;
 }
 
 /* Fallback pickers */
