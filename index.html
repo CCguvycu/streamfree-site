@@ -1343,16 +1343,8 @@ async function startTorrentStream(magnet,qual){
   _vtClient.on('error',()=>_fallbackToEmbed());
 }
 
-function _showEmbedFrame(){
-  _clearPlayer();
-  document.getElementById('player-frame').style.display='block';
-  document.getElementById('btn-next-src').style.display='';
-}
-
 function _fallbackToEmbed(){
-  _showEmbedFrame();
-  buildSrcBar();
-  loadFrame();
+  _showNotFound();
 }
 
 // Auto-resolve: apibay for movies/TV, AnimeTosho for anime
@@ -1419,7 +1411,7 @@ async function _autoStream(){
         return;
       }
     }
-  }catch{}
+  }catch(e){ console.error('[_autoStream]',e); }
 
   // No torrent found
   _showNotFound();
