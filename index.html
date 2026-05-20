@@ -537,49 +537,11 @@ async function openItem(m){
   PS.seasonEpCounts = null;
   if(m.id&&m.id.startsWith('mal:')) PS.type='series';
 
-  _triedSrcs.clear();
-  if(!m.malId) SOURCES.forEach((s,i)=>{ if(s.anime) _triedSrcs.add(i); });
-  PS.src = bestSrcIdx();
-
   document.getElementById('player-title').textContent=PS.title;
   document.getElementById('player-overlay').classList.add('open');
   document.body.style.overflow='hidden';
   buildEpBar();
   cwAdd(m);
-
-  // For anime: resolve IMDB ID from Jikan external links so regular sources work
-  if(m.malId){
-    const loader=document.getElementById('player-loader');
-    loader.classList.remove('hidden');
-    document.getElementById('loader-msg').textContent='Finding streams…';
-    const ck='anime-ext-'+m.malId;
-    let imdbId=cGet(ck);
-    if(!imdbId){
-      try{
-        const ac=new AbortController();
-        const tid=setTimeout(()=>ac.abort(),4000);
-        const d=await fetch(`https://api.jikan.moe/v4/anime/${m.malId}/external`,{signal:ac.signal}).then(r=>r.json());
-        clearTimeout(tid);
-        const lnk=(d.data||[]).find(x=>x.url&&x.url.includes('imdb.com'));
-        if(lnk){const mt=lnk.url.match(/tt\d+/);if(mt){imdbId=mt[0];cSet(ck,imdbId);}}
-      }catch{}
-    }
-    if(imdbId){
-      // Has IMDB — use all regular sources, skip anime-native
-      PS.id=imdbId;
-      _triedSrcs.clear();
-      SOURCES.forEach((s,i)=>{ if(s.anime) _triedSrcs.add(i); });
-      PS.src=0;
-    } else {
-      // No IMDB — only use anime-native sources
-      _triedSrcs.clear();
-      SOURCES.forEach((s,i)=>{ if(!s.anime) _triedSrcs.add(i); });
-      const ai=SOURCES.findIndex(s=>s.anime);
-      PS.src=ai>=0?ai:0;
-    }
-  }
-
-  buildSrcBar();
 
   // Background: fetch TMDB ID + episode counts
   if(PS.id && !PS.id.startsWith('mal:')){
@@ -1357,7 +1319,7 @@ async function _autoStream(){
     if(PS.type!=='series'&&PS.id?.startsWith('tt')){
       const movie=await Promise.race([
         ytsByImdb(PS.id),
-        new Promise((_,r)=>setTimeout(()=>r(null),5000))
+        new Promise((_,r)=>setTimeout(()=>r(null),3000))
       ]);
       if(movie?.torrents?.length){
         const best=movie.torrents.find(t=>t.quality==='1080p')||
@@ -1373,7 +1335,7 @@ async function _autoStream(){
     if(PS.type==='series'&&PS.id?.startsWith('tt')){
       const eps=await Promise.race([
         eztvByImdb(PS.id),
-        new Promise(r=>setTimeout(()=>r([]),4000))
+        new Promise(r=>setTimeout(()=>r([]),3000))
       ]);
       const s=String(PS.s).padStart(2,'0'),e=String(PS.ep).padStart(2,'0');
       const re=new RegExp(`S0*${PS.s}E0*${PS.ep}|${s}x${e}`,'i');
@@ -1390,7 +1352,7 @@ async function _autoStream(){
       const q=`${PS.title} ${PS.ep<10?'0'+PS.ep:PS.ep}`;
       const items=await Promise.race([
         toshoSearch(q),
-        new Promise(r=>setTimeout(()=>r([]),4000))
+        new Promise(r=>setTimeout(()=>r([]),3000))
       ]);
       if(items.length){
         await startTorrentStream(items[0].magnet_uri,'');
@@ -1685,6 +1647,8 @@ window.onload=()=>{
   document.getElementById('hero').style.display='block';
   loadHero();
   buildRows('movie');
+  // Preload WebTorrent in background so first click is instant
+  setTimeout(_loadWT, 1500);
 };
 </script>
 </body>
