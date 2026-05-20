@@ -539,98 +539,114 @@ function makeCard(m){
 /* ═══════════════════════════════════════════════════════
    OPEN ITEM / PLAYER
 ═══════════════════════════════════════════════════════ */
+
+// Returns best source index for current content type
+function bestSrcIdx(){
+  const isAnime = !!PS.malId;
+  if(isAnime){
+    // Prefer anime-native sources first
+    const ai = SOURCES.findIndex(s=>s.anime);
+    return ai>=0 ? ai : 0;
+  }
+  return 0;
+}
+
 function openItem(m){
-  PS.id=m.id;PS.title=m.name||m.title||'';
-  PS.type=m.type==='series'||MODE==='series'?'series':'movie';
-  PS.src=0;PS.s=1;PS.ep=1;PS.malId=m.malId||null;PS.tmdbId=m.moviedb_id||null;
-  PS.epCount=m.episodes||0;
-  if(m.id&&m.id.startsWith('mal:'))PS.type='series';
+  PS.id    = m.id;
+  PS.title = m.name||m.title||'';
+  PS.type  = (m.type==='series'||MODE==='series'||MODE==='anime') ? 'series' : 'movie';
+  PS.s=1; PS.ep=1;
+  PS.malId  = m.malId||null;
+  PS.tmdbId = m.moviedb_id||null;
+  PS.epCount= m.episodes||0;
+  if(m.id&&m.id.startsWith('mal:')) PS.type='series';
+
+  PS.src = bestSrcIdx();
+
   document.getElementById('player-title').textContent=PS.title;
   document.getElementById('player-overlay').classList.add('open');
-  buildSrcBar();buildEpBar();
+  document.body.style.overflow='hidden';
+  buildSrcBar();
+  buildEpBar();
   cwAdd(m);
   loadFrame();
-  // Fetch TMDB ID in background for VidLink
-  if(!PS.tmdbId&&m.id&&!m.id.startsWith('mal:')){
-    const type=PS.type==='series'?'series':'movie';
-    fetch(`https://v3-cinemeta.strem.io/meta/${type}/${m.id}.json`)
-      .then(r=>r.json()).then(d=>{
-        const mid=d?.meta?.moviedb_id;
-        if(mid)PS.tmdbId=String(mid);
-      }).catch(()=>{});
+
+  // Fetch metadata in background for TMDB ID (VidLink)
+  if(!PS.tmdbId && m.id && !m.id.startsWith('mal:')){
+    const t=PS.type==='series'?'series':'movie';
+    fetch(`https://v3-cinemeta.strem.io/meta/${t}/${m.id}.json`)
+      .then(r=>r.json()).then(d=>{ if(d?.meta?.moviedb_id) PS.tmdbId=String(d.meta.moviedb_id); })
+      .catch(()=>{});
   }
 }
 
 function closePlayer(){
   document.getElementById('player-overlay').classList.remove('open');
-  document.getElementById('player-frame').src='';
+  document.getElementById('player-frame').src='about:blank';
+  document.body.style.overflow='';
   stopAuto();
 }
 
 function buildSrcBar(){
+  const isAnime=!!PS.malId;
   const bar=document.getElementById('src-bar');
-  bar.innerHTML=SOURCES.map((s,i)=>
-    `<button class="src-btn${i===PS.src?' active':''}${_deadSrcs.has(i)?' dead':''}"
-      onclick="setSrc(${i},this)" title="${esc(s.n)}">${esc(s.n)}</button>`
-  ).join('');
+  bar.innerHTML=SOURCES.map((s,i)=>{
+    // For anime content, show anime sources prominently
+    const label = isAnime&&s.anime ? `★ ${s.n}` : s.n;
+    return `<button class="src-btn${i===PS.src?' active':''}" onclick="setSrc(${i},this)">${esc(label)}</button>`;
+  }).join('');
 }
-
-const _deadSrcs=new Set();
-const _origSetSrc=setSrc;
 
 function setSrc(i,btn){
   PS.src=i;
   document.querySelectorAll('.src-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  stopAuto();loadFrame();
+  stopAuto();
+  loadFrame();
 }
 
 function buildEpBar(){
   const bar=document.getElementById('ep-bar');
-  if(PS.type!=='series'){bar.style.display='none';return;}
+  if(PS.type!=='series'){ bar.style.display='none'; return; }
   bar.style.display='flex';
-  const maxEp=PS.epCount||50;
-  const seasons=PS.epCount?1:10;
-  let html=`<span style="font-size:.78rem;color:var(--muted)">Season:</span>
-    <select onchange="PS.s=+this.value;loadFrame()">
-      ${Array.from({length:seasons},(_,i)=>`<option value="${i+1}"${PS.s===i+1?' selected':''}>S${i+1}</option>`).join('')}
+  const maxEp = Math.max(PS.epCount||0, 100);
+  const maxS  = 20;
+  bar.innerHTML=`
+    <span style="font-size:.78rem;color:var(--muted)">S</span>
+    <select onchange="PS.s=+this.value;PS.ep=1;buildEpBar();loadFrame()">
+      ${Array.from({length:maxS},(_,i)=>`<option value="${i+1}"${PS.s===i+1?' selected':''}>S${i+1}</option>`).join('')}
     </select>
-    <span style="font-size:.78rem;color:var(--muted)">Episode:</span>
+    <span style="font-size:.78rem;color:var(--muted)">E</span>
     <select id="ep-sel" onchange="PS.ep=+this.value;cwUpdateEp();loadFrame()">
-      ${Array.from({length:Math.min(maxEp,100)},(_,i)=>`<option value="${i+1}"${PS.ep===i+1?' selected':''}>E${i+1}</option>`).join('')}
+      ${Array.from({length:maxEp},(_,i)=>`<option value="${i+1}"${PS.ep===i+1?' selected':''}>E${i+1}</option>`).join('')}
     </select>
-    <button class="ep-nav" onclick="if(PS.ep>1){PS.ep--;cwUpdateEp();loadFrame();}">◀</button>
-    <button class="ep-nav" onclick="PS.ep++;cwUpdateEp();loadFrame();">▶</button>`;
-  bar.innerHTML=html;
+    <button class="ep-nav" onclick="if(PS.ep>1){PS.ep--;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();loadFrame();}">◀ Prev</button>
+    <button class="ep-nav" onclick="PS.ep++;document.getElementById('ep-sel').value=PS.ep;cwUpdateEp();loadFrame();">Next ▶</button>`;
 }
 
-let _autoT=null,_autoI=null,_frameLoaded=false;
+let _autoT=null,_autoI=null;
 function loadFrame(){
-  _frameLoaded=false;
   stopAuto();
   const loader=document.getElementById('player-loader');
+  const msg=document.getElementById('loader-msg');
   loader.classList.remove('hidden');
-  document.getElementById('loader-msg').textContent='Loading source…';
+  msg.textContent=`Loading ${SOURCES[PS.src].n}…`;
+
   const src=SOURCES[PS.src];
   let url;
-  if(src.anime&&PS.malId) url=src.anime(PS.malId,PS.ep);
-  else if(PS.type==='series') url=src.t(PS.id,PS.s,PS.ep);
-  else url=src.m(PS.id);
-  const fr=document.getElementById('player-frame');
-  // Reset iframe completely before loading new source
-  fr.src='about:blank';
+  try{
+    if(src.anime&&PS.malId)      url=src.anime(PS.malId, PS.ep);
+    else if(PS.type==='series')  url=src.t(PS.id, PS.s, PS.ep);
+    else                         url=src.m(PS.id);
+  }catch(e){ skipSrc(); return; }
+
   PS._currentUrl=url;
-  setTimeout(()=>{
-    fr.src=url;
-    fr.onload=()=>{
-      _frameLoaded=true;
-      loader.classList.add('hidden');
-    };
-  },80);
-  // Hide loader after 5s regardless (many embeds don't fire onload)
-  setTimeout(()=>loader.classList.add('hidden'),5000);
-  // Start auto-cycle after 10s if nothing loaded
-  _autoT=setTimeout(()=>{if(!_frameLoaded)startAuto();},10000);
+  const fr=document.getElementById('player-frame');
+  fr.src='about:blank';
+  setTimeout(()=>{ fr.src=url; },100);
+
+  // Hide loader after 4s — embeds rarely fire onload
+  _autoT=setTimeout(()=>loader.classList.add('hidden'), 4000);
 }
 
 function openInTab(){if(PS._currentUrl)window.open(PS._currentUrl,'_blank');}
@@ -640,7 +656,7 @@ function toggleFullscreen(){
   else document.exitFullscreen();
 }
 
-let _autoStart=-1;
+let _autoStart=-1,_autoI=null;
 function startAuto(){
   if(_autoStart<0)_autoStart=PS.src;
   const next=(PS.src+1)%SOURCES.length;
